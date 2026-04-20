@@ -3,12 +3,13 @@ import sqlite3
 import urllib.parse
 import json
 import requests
+import asyncio
 
 # ==========================================
 # 1. إعدادات الذكاء الاصطناعي وقاعدة البيانات
 # ==========================================
-# 🔑 ضع مفتاح API الخاص بك هنا
-API_KEY = "AIzaSyCAevQlwy1doT2QYixFVDN4ScAJMKnLKV4"
+# 🔑 مفتاح apifreellm الجديد
+API_KEY = "apf_latf3gbtnq3h13gzw0mlom3z"
 
 DB_NAME = "smart_health_luxury.db"
 
@@ -26,7 +27,7 @@ def init_db():
     return conn
 
 # ==========================================
-# 2. محرك الذكاء الاصطناعي (مباشر عبر REST API)
+# 2. محرك الذكاء الاصطناعي (apifreellm)
 # ==========================================
 def analyze_condition_ai(condition_text):
     prompt = f"""
@@ -39,33 +40,39 @@ def analyze_condition_ai(condition_text):
     }}
     """
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
-    headers = {'Content-Type': 'application/json'}
+    # 🌟 استخدام API الجديد apifreellm.com
+    url = "https://apifreellm.com/api/v1/chat"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {API_KEY}'
+    }
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"}
+        "message": prompt
     }
     
     try:
         response = requests.post(url, headers=headers, json=payload)
         response_data = response.json()
         
-        if response.status_code == 200:
-            raw_text = response_data['candidates'][0]['content']['parts'][0]['text'].strip()
+        if response.status_code == 200 and response_data.get("success"):
+            raw_text = response_data['response'].strip()
+            # تنظيف الرد في حال أضاف النموذج علامات Markdown حول الـ JSON
             if raw_text.startswith("```json"):
                 raw_text = raw_text.strip("`").replace("json\n", "", 1)
+            elif raw_text.startswith("```"):
+                raw_text = raw_text.strip("`")
             return json.loads(raw_text)
+            
+        elif response.status_code == 401:
+            return {"error": True, "assessment": "مفتاح API غير صالح", "risk_level": "خطأ 401", "advice": "يرجى التحقق من صحة المفتاح المستخدم."}
+        elif response.status_code == 429:
+            return {"error": True, "assessment": "تم تجاوز حد الطلبات.", "risk_level": "خطأ 429", "advice": "الرجاء الانتظار 40 ثانية والمحاولة مرة أخرى."}
+        elif response.status_code == 400:
+            return {"error": True, "assessment": "طلب غير صالح.", "risk_level": "خطأ 400", "advice": "هناك مشكلة في البيانات المرسلة."}
         else:
-            error_msg = response_data.get('error', {}).get('message', 'خطأ غير معروف')
-            return {
-                "error": True, "assessment": f"خطأ الخادم: {response.status_code}", 
-                "risk_level": "غير محدد", "advice": error_msg
-            }
+            return {"error": True, "assessment": f"خطأ الخادم: {response.status_code}", "risk_level": "غير محدد", "advice": "حدث خطأ غير معروف."}
     except Exception as e:
-        return {
-            "error": True, "assessment": "تعذر الاتصال.", 
-            "risk_level": "غير محدد", "advice": str(e)
-        }
+        return {"error": True, "assessment": "تعذر الاتصال بالإنترنت أو قراءة الرد.", "risk_level": "غير محدد", "advice": str(e)}
 
 # ==========================================
 # 3. الواجهة الرئيسية والتطبيق
@@ -82,7 +89,12 @@ def main(page: ft.Page):
 
     db_conn = init_db()
 
-    # دالة تصميم الحقول الفاخرة
+    def format_phone_number(phone):
+        safe_phone = phone.replace("+", "").replace(" ", "").strip()
+        if len(safe_phone) == 9 and safe_phone.startswith("7"):
+            safe_phone = f"967{safe_phone}"
+        return safe_phone
+
     def premium_input(label, icon, is_multiline=False, is_phone=False):
         return ft.TextField(
             label=label, prefix_icon=icon, border_color=ft.Colors.TRANSPARENT,
@@ -92,11 +104,18 @@ def main(page: ft.Page):
             content_padding=18 
         )
 
-    # ستايل الأزرار الموحد
     btn_style = ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12), padding=18)
 
+    # 🌟 الدالة السحرية والمطابقة 100% لإصدار Flet 0.90 لفتح الروابط
+    async def open_url(url_str):
+        try:
+            await ft.UrlLauncher().launch_url(url_str)
+        except Exception as e:
+            import webbrowser
+            webbrowser.open(url_str)
+
     # ==========================================
-    # الخانة 1: التحليل الذكي (بدون نوع الفحص)
+    # الخانة 1: التحليل الذكي
     # ==========================================
     name_input = premium_input("اسم المريض", ft.Icons.PERSON)
     phone_input = premium_input("رقم الهاتف", ft.Icons.PHONE, is_phone=True)
@@ -106,12 +125,12 @@ def main(page: ft.Page):
         modal=True, shape=ft.RoundedRectangleBorder(radius=20),
         content=ft.Container(padding=20, content=ft.Row([
             ft.ProgressRing(color="#1E3A8A", stroke_width=4),
-            ft.Text("Gemini يقوم بتحليل الحالة...", weight="bold", size=16, color="#1E3A8A")
+            ft.Text("جاري تحليل الحالة...", weight="bold", size=16, color="#1E3A8A")
         ], spacing=20))
     )
 
     # ==========================================
-    # الخانة 2: التقرير (كما كانت في الكود الأصلي)
+    # الخانة 2: التقرير (الذكاء الاصطناعي)
     # ==========================================
     report_info = ft.Text(size=14, color="#334155", weight="w500")
     report_assessment = ft.Text(size=16, weight="bold", color="#1E3A8A")
@@ -120,8 +139,21 @@ def main(page: ft.Page):
     report_risk.content = report_risk_text
     report_advice = ft.Text(size=14, color="#475569", italic=True)
 
-    btn_wa_report = ft.Button(content=ft.Row([ft.Icon(ft.Icons.CHAT, color=ft.Colors.WHITE), ft.Text("WhatsApp", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#10B981", style=btn_style, expand=True)
-    btn_sms_report = ft.Button(content=ft.Row([ft.Icon(ft.Icons.SMS, color=ft.Colors.WHITE), ft.Text("SMS", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#3B82F6", style=btn_style, expand=True)
+    # دوال الإرسال لقسم التقرير
+    def on_report_wa_click(e):
+        safe_phone = format_phone_number(phone_input.value)
+        msg = f"مرحباً {name_input.value} 💙\nإليك تقريرك الطبي المبدئي:\n\n🧠 التقييم: {report_assessment.value}\n💡 نصيحة: {report_advice.value}\n\nنتمنى لك الشفاء العاجل."
+        url = f"https://wa.me/{safe_phone}?text={urllib.parse.quote(msg)}"
+        page.run_task(open_url, url)
+
+    def on_report_sms_click(e):
+        safe_phone = format_phone_number(phone_input.value)
+        msg = f"مرحباً {name_input.value} 💙\nإليك تقريرك الطبي المبدئي:\n\n🧠 التقييم: {report_assessment.value}\n💡 نصيحة: {report_advice.value}\n\nنتمنى لك الشفاء العاجل."
+        url = f"sms:{safe_phone}?body={urllib.parse.quote(msg)}"
+        page.run_task(open_url, url)
+
+    btn_wa_report = ft.Button(content=ft.Row([ft.Icon(ft.Icons.CHAT, color=ft.Colors.WHITE), ft.Text("WhatsApp", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#10B981", style=btn_style, expand=True, on_click=on_report_wa_click)
+    btn_sms_report = ft.Button(content=ft.Row([ft.Icon(ft.Icons.SMS, color=ft.Colors.WHITE), ft.Text("SMS", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#3B82F6", style=btn_style, expand=True, on_click=on_report_sms_click)
 
     empty_report_msg = ft.Container(
         content=ft.Column([
@@ -159,31 +191,28 @@ def main(page: ft.Page):
     )
 
     # ==========================================
-    # الخانة 3: الإرسال اليدوي (الصفحة الجديدة تماماً)
+    # الخانة 3: الإرسال اليدوي
     # ==========================================
     manual_name = premium_input("اسم المريض", ft.Icons.PERSON)
     manual_phone = premium_input("رقم الهاتف", ft.Icons.PHONE, is_phone=True)
     manual_test = premium_input("نوع الفحص", ft.Icons.BIOTECH)
     manual_result = premium_input("النتيجة", ft.Icons.FACT_CHECK, is_multiline=True)
 
-    btn_wa_manual = ft.Button(content=ft.Row([ft.Icon(ft.Icons.CHAT, color=ft.Colors.WHITE), ft.Text("إرسال WhatsApp", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#10B981", style=btn_style, expand=True)
-    btn_sms_manual = ft.Button(content=ft.Row([ft.Icon(ft.Icons.SMS, color=ft.Colors.WHITE), ft.Text("إرسال SMS", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#3B82F6", style=btn_style, expand=True)
-
-    # دالة ذكية لتحديث روابط الإرسال اليدوي تلقائياً أثناء الكتابة (بدون الحاجة لـ launch_url)
-    def update_manual_links(e):
+    # دوال الإرسال لقسم الإرسال اليدوي
+    def on_manual_wa_click(e):
+        safe_phone = format_phone_number(manual_phone.value)
         msg = f"مرحباً {manual_name.value} 💙\nإليك نتيجة الفحص الخاص بك:\n\n🧪 نوع الفحص: {manual_test.value}\n📋 النتيجة: {manual_result.value}\n\nنتمنى لك دوام الصحة والعافية."
-        encoded_msg = urllib.parse.quote(msg)
-        safe_phone = manual_phone.value.replace("+", "").replace(" ", "")
-        
-        btn_wa_manual.url = f"[https://wa.me/](https://wa.me/){safe_phone}?text={encoded_msg}" if safe_phone else None
-        btn_sms_manual.url = f"sms:{safe_phone}?body={encoded_msg}" if safe_phone else None
-        page.update()
+        url = f"https://wa.me/{safe_phone}?text={urllib.parse.quote(msg)}"
+        page.run_task(open_url, url)
 
-    # ربط الحقول بالدالة لتحديث الرابط مع كل حرف يكتبه المستخدم
-    manual_name.on_change = update_manual_links
-    manual_phone.on_change = update_manual_links
-    manual_test.on_change = update_manual_links
-    manual_result.on_change = update_manual_links
+    def on_manual_sms_click(e):
+        safe_phone = format_phone_number(manual_phone.value)
+        msg = f"مرحباً {manual_name.value} 💙\nإليك نتيجة الفحص الخاص بك:\n\n🧪 نوع الفحص: {manual_test.value}\n📋 النتيجة: {manual_result.value}\n\nنتمنى لك دوام الصحة والعافية."
+        url = f"sms:{safe_phone}?body={urllib.parse.quote(msg)}"
+        page.run_task(open_url, url)
+
+    btn_wa_manual = ft.Button(content=ft.Row([ft.Icon(ft.Icons.CHAT, color=ft.Colors.WHITE), ft.Text("إرسال WhatsApp", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#10B981", style=btn_style, expand=True, on_click=on_manual_wa_click)
+    btn_sms_manual = ft.Button(content=ft.Row([ft.Icon(ft.Icons.SMS, color=ft.Colors.WHITE), ft.Text("إرسال SMS", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#3B82F6", style=btn_style, expand=True, on_click=on_manual_sms_click)
 
     # ==========================================
     # الخانة 4: الأرشيف
@@ -235,11 +264,11 @@ def main(page: ft.Page):
         page.update()
 
         if ai_res.get("error"):
-            show_toast("حدث خطأ في الاتصال، راجع التقرير.", True)
+            show_toast(ai_res.get("advice", "حدث خطأ في الاتصال، راجع التقرير."), True)
             report_risk.bgcolor = "#EF4444"
-            report_risk_text.value = "خطأ اتصال"
+            report_risk_text.value = "مرفوض"
         else:
-            show_toast("تم استخراج التقرير بذكاء Gemini بنجاح!")
+            show_toast("تم استخراج التقرير الذكي بنجاح!")
             risk = ai_res.get("risk_level", "")
             
             if "منخفض" in risk:
@@ -250,9 +279,8 @@ def main(page: ft.Page):
                 report_risk_text.value = "يحتاج انتباه"
             else:
                 report_risk.bgcolor = "#EF4444" 
-                report_risk_text.value = "مراجعة فورية"
+                report_risk_text.value = "حرج"
 
-            # حفظ البيانات (نمرر "تحليل ذكي" كنوع الفحص)
             cursor = db_conn.cursor()
             cursor.execute(
                 "INSERT INTO patients (name, phone, condition, test_type, ai_result) VALUES (?, ?, ?, ?, ?)",
@@ -261,28 +289,15 @@ def main(page: ft.Page):
             db_conn.commit()
             update_archive()
         
-        # تعبئة واجهة التقرير
         report_info.value = f"المريض: {name_input.value}\nالهاتف: {phone_input.value}\nالشكوى: {cond_input.value}"
         report_assessment.value = f"{ai_res.get('assessment')}"
         report_advice.value = f"{ai_res.get('advice')}"
 
-        # تجهيز روابط الإرسال للتقرير الذكي
-        msg = f"مرحباً {name_input.value} 💙\nإليك تقريرك الطبي (بواسطة الذكاء الاصطناعي):\n\n🧠 التقييم: {ai_res.get('assessment')}\n💡 نصيحة: {ai_res.get('advice')}\n\nنتمنى لك الشفاء العاجل."
-        encoded_msg = urllib.parse.quote(msg)
-        safe_phone = phone_input.value.replace("+", "").replace(" ", "")
-        
-        btn_wa_report.url = f"[https://wa.me/](https://wa.me/){safe_phone}?text={encoded_msg}"
-        btn_sms_report.url = f"sms:{safe_phone}?body={encoded_msg}"
-
         empty_report_msg.visible = False
         report_content.visible = True
         
-        # الانتقال التلقائي لخانة التقرير
         page.navigation_bar.selected_index = 1
         switch_view(1)
-        
-        btn_wa_report.update()
-        btn_sms_report.update()
 
     # ==========================================
     # إعداد الحاويات الرئيسية والهيدر 
@@ -294,7 +309,7 @@ def main(page: ft.Page):
             ft.Container(content=ft.Icon(ft.Icons.MEDICAL_SERVICES, size=35, color="#1E3A8A"), bgcolor=ft.Colors.WHITE, padding=12, border_radius=20),
             ft.Column([
                 ft.Text("Smart Clinic", size=24, weight="900", color=ft.Colors.WHITE),
-                ft.Text("Powered by Gemini 2.5 Flash", size=12, color="#E0F2FE", italic=True)
+                ft.Text("Powered by AI", size=12, color="#E0F2FE", italic=True)
             ], spacing=0)
         ], spacing=15)
     )
@@ -305,7 +320,6 @@ def main(page: ft.Page):
         padding=18, border_radius=15, ink=True, on_click=on_analyze_click, shadow=ft.BoxShadow(blur_radius=15, color="#93C5FD", offset=ft.Offset(0, 8))
     )
 
-    # تجميع صفحات (الخانات)
     view_analysis = ft.Container(
         padding=25,
         content=ft.Column([
