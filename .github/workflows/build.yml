@@ -1,15 +1,14 @@
 name: Build Smart Clinic APK
 
-# متى يتم تشغيل هذا البناء؟
 on:
   push:
-    branches: [ "main", "master" ] # عند رفع كود جديد
-  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً بضغطة زر
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build APK
-    runs-on: ubuntu-latest # سيرفرات لينكس سريعة من جيت هب
+    runs-on: ubuntu-latest
 
     steps:
       - name: 📥 Checkout repository
@@ -18,7 +17,7 @@ jobs:
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # إصدار بايثون مستقر
+          python-version: '3.11'
 
       - name: 📦 Install Requirements
         run: |
@@ -26,14 +25,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: 🚀 Build APK with Flet
-        # هنا تضع اسم تطبيقك، الحزمة، والأيقونة
-        run: >
-          flet build apk 
-          --project-name smart_clinic 
-          --product "Smart Clinic" 
-          --org "com.yourname.smartclinic" 
-          --description "نظام العيادة الذكي المتكامل" 
-          --icon "assets/icon.png"
+        run: flet build apk --product "Smart Clinic" --org "com.yourname.smartclinic"
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
