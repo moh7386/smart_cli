@@ -8,8 +8,8 @@ import asyncio
 # ==========================================
 # 1. إعدادات الذكاء الاصطناعي وقاعدة البيانات
 # ==========================================
-# 🔑 مفتاح apifreellm الجديد
-API_KEY = "apf_latf3gbtnq3h13gzw0mlom3z"
+# 🔑 ضع مفتاح Groq الخاص بك هنا (ولا تنشره أبداً)
+API_KEY = "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"
 
 DB_NAME = "smart_health_luxury.db"
 
@@ -27,7 +27,7 @@ def init_db():
     return conn
 
 # ==========================================
-# 2. محرك الذكاء الاصطناعي (apifreellm)
+# 2. محرك الذكاء الاصطناعي (تم تحديث الموديل)
 # ==========================================
 def analyze_condition_ai(condition_text):
     prompt = f"""
@@ -40,39 +40,45 @@ def analyze_condition_ai(condition_text):
     }}
     """
     
-    # 🌟 استخدام API الجديد apifreellm.com
-    url = "https://apifreellm.com/api/v1/chat"
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    
     headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {API_KEY}'
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
     }
+    
     payload = {
-        "message": prompt
+        # 🌟 تم التحديث إلى الموديل الجديد والمستقر من Groq لتجنب خطأ 400
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"}
     }
     
     try:
         response = requests.post(url, headers=headers, json=payload)
-        response_data = response.json()
         
-        if response.status_code == 200 and response_data.get("success"):
-            raw_text = response_data['response'].strip()
-            # تنظيف الرد في حال أضاف النموذج علامات Markdown حول الـ JSON
+        if response.status_code == 200:
+            response_data = response.json()
+            raw_text = response_data['choices'][0]['message']['content'].strip()
+            
             if raw_text.startswith("```json"):
                 raw_text = raw_text.strip("`").replace("json\n", "", 1)
             elif raw_text.startswith("```"):
                 raw_text = raw_text.strip("`")
+                
             return json.loads(raw_text)
-            
         elif response.status_code == 401:
-            return {"error": True, "assessment": "مفتاح API غير صالح", "risk_level": "خطأ 401", "advice": "يرجى التحقق من صحة المفتاح المستخدم."}
+            return {"error": True, "assessment": "مفتاح API غير صالح (401).", "risk_level": "مرفوض", "advice": "تأكد من صحة مفتاح Groq الخاص بك."}
         elif response.status_code == 429:
-            return {"error": True, "assessment": "تم تجاوز حد الطلبات.", "risk_level": "خطأ 429", "advice": "الرجاء الانتظار 40 ثانية والمحاولة مرة أخرى."}
-        elif response.status_code == 400:
-            return {"error": True, "assessment": "طلب غير صالح.", "risk_level": "خطأ 400", "advice": "هناك مشكلة في البيانات المرسلة."}
+            return {"error": True, "assessment": "تجاوزت الحد المسموح للطلبات (429).", "risk_level": "مرفوض", "advice": "الرجاء الانتظار قليلاً ثم المحاولة."}
         else:
-            return {"error": True, "assessment": f"خطأ الخادم: {response.status_code}", "risk_level": "غير محدد", "advice": "حدث خطأ غير معروف."}
+            return {"error": True, "assessment": f"خطأ الخادم: {response.status_code}", "risk_level": "غير محدد", "advice": response.text}
+            
     except Exception as e:
-        return {"error": True, "assessment": "تعذر الاتصال بالإنترنت أو قراءة الرد.", "risk_level": "غير محدد", "advice": str(e)}
+        return {"error": True, "assessment": "تعذر الاتصال بالإنترنت.", "risk_level": "غير محدد", "advice": str(e)}
 
 # ==========================================
 # 3. الواجهة الرئيسية والتطبيق
@@ -106,14 +112,6 @@ def main(page: ft.Page):
 
     btn_style = ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12), padding=18)
 
-    # 🌟 الدالة السحرية والمطابقة 100% لإصدار Flet 0.90 لفتح الروابط
-    async def open_url(url_str):
-        try:
-            await ft.UrlLauncher().launch_url(url_str)
-        except Exception as e:
-            import webbrowser
-            webbrowser.open(url_str)
-
     # ==========================================
     # الخانة 1: التحليل الذكي
     # ==========================================
@@ -125,7 +123,7 @@ def main(page: ft.Page):
         modal=True, shape=ft.RoundedRectangleBorder(radius=20),
         content=ft.Container(padding=20, content=ft.Row([
             ft.ProgressRing(color="#1E3A8A", stroke_width=4),
-            ft.Text("جاري تحليل الحالة...", weight="bold", size=16, color="#1E3A8A")
+            ft.Text("جاري التحليل عبر Llama-3...", weight="bold", size=16, color="#1E3A8A")
         ], spacing=20))
     )
 
@@ -139,18 +137,25 @@ def main(page: ft.Page):
     report_risk.content = report_risk_text
     report_advice = ft.Text(size=14, color="#475569", italic=True)
 
-    # دوال الإرسال لقسم التقرير
-    def on_report_wa_click(e):
+    # 🌟 دوال فتح الروابط مبرمجة لتعمل مع Flet الحديث (Async) بشكل مضمون
+    async def on_report_wa_click(e):
         safe_phone = format_phone_number(phone_input.value)
         msg = f"مرحباً {name_input.value} 💙\nإليك تقريرك الطبي المبدئي:\n\n🧠 التقييم: {report_assessment.value}\n💡 نصيحة: {report_advice.value}\n\nنتمنى لك الشفاء العاجل."
         url = f"https://wa.me/{safe_phone}?text={urllib.parse.quote(msg)}"
-        page.run_task(open_url, url)
+        
+        # توافق ذكي مع كل إصدارات Flet
+        res = page.launch_url(url)
+        if asyncio.iscoroutine(res):
+            await res
 
-    def on_report_sms_click(e):
+    async def on_report_sms_click(e):
         safe_phone = format_phone_number(phone_input.value)
         msg = f"مرحباً {name_input.value} 💙\nإليك تقريرك الطبي المبدئي:\n\n🧠 التقييم: {report_assessment.value}\n💡 نصيحة: {report_advice.value}\n\nنتمنى لك الشفاء العاجل."
         url = f"sms:{safe_phone}?body={urllib.parse.quote(msg)}"
-        page.run_task(open_url, url)
+        
+        res = page.launch_url(url)
+        if asyncio.iscoroutine(res):
+            await res
 
     btn_wa_report = ft.Button(content=ft.Row([ft.Icon(ft.Icons.CHAT, color=ft.Colors.WHITE), ft.Text("WhatsApp", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#10B981", style=btn_style, expand=True, on_click=on_report_wa_click)
     btn_sms_report = ft.Button(content=ft.Row([ft.Icon(ft.Icons.SMS, color=ft.Colors.WHITE), ft.Text("SMS", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#3B82F6", style=btn_style, expand=True, on_click=on_report_sms_click)
@@ -198,18 +203,23 @@ def main(page: ft.Page):
     manual_test = premium_input("نوع الفحص", ft.Icons.BIOTECH)
     manual_result = premium_input("النتيجة", ft.Icons.FACT_CHECK, is_multiline=True)
 
-    # دوال الإرسال لقسم الإرسال اليدوي
-    def on_manual_wa_click(e):
+    async def on_manual_wa_click(e):
         safe_phone = format_phone_number(manual_phone.value)
         msg = f"مرحباً {manual_name.value} 💙\nإليك نتيجة الفحص الخاص بك:\n\n🧪 نوع الفحص: {manual_test.value}\n📋 النتيجة: {manual_result.value}\n\nنتمنى لك دوام الصحة والعافية."
         url = f"https://wa.me/{safe_phone}?text={urllib.parse.quote(msg)}"
-        page.run_task(open_url, url)
+        
+        res = page.launch_url(url)
+        if asyncio.iscoroutine(res):
+            await res
 
-    def on_manual_sms_click(e):
+    async def on_manual_sms_click(e):
         safe_phone = format_phone_number(manual_phone.value)
         msg = f"مرحباً {manual_name.value} 💙\nإليك نتيجة الفحص الخاص بك:\n\n🧪 نوع الفحص: {manual_test.value}\n📋 النتيجة: {manual_result.value}\n\nنتمنى لك دوام الصحة والعافية."
         url = f"sms:{safe_phone}?body={urllib.parse.quote(msg)}"
-        page.run_task(open_url, url)
+        
+        res = page.launch_url(url)
+        if asyncio.iscoroutine(res):
+            await res
 
     btn_wa_manual = ft.Button(content=ft.Row([ft.Icon(ft.Icons.CHAT, color=ft.Colors.WHITE), ft.Text("إرسال WhatsApp", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#10B981", style=btn_style, expand=True, on_click=on_manual_wa_click)
     btn_sms_manual = ft.Button(content=ft.Row([ft.Icon(ft.Icons.SMS, color=ft.Colors.WHITE), ft.Text("إرسال SMS", color=ft.Colors.WHITE, weight="bold")], alignment=ft.MainAxisAlignment.CENTER), bgcolor="#3B82F6", style=btn_style, expand=True, on_click=on_manual_sms_click)
@@ -264,11 +274,11 @@ def main(page: ft.Page):
         page.update()
 
         if ai_res.get("error"):
-            show_toast(ai_res.get("advice", "حدث خطأ في الاتصال، راجع التقرير."), True)
+            show_toast("حدث خطأ في الاتصال، راجع التقرير.", True)
             report_risk.bgcolor = "#EF4444"
             report_risk_text.value = "مرفوض"
         else:
-            show_toast("تم استخراج التقرير الذكي بنجاح!")
+            show_toast("تم استخراج التقرير بنجاح!")
             risk = ai_res.get("risk_level", "")
             
             if "منخفض" in risk:
@@ -309,7 +319,7 @@ def main(page: ft.Page):
             ft.Container(content=ft.Icon(ft.Icons.MEDICAL_SERVICES, size=35, color="#1E3A8A"), bgcolor=ft.Colors.WHITE, padding=12, border_radius=20),
             ft.Column([
                 ft.Text("Smart Clinic", size=24, weight="900", color=ft.Colors.WHITE),
-                ft.Text("Powered by AI", size=12, color="#E0F2FE", italic=True)
+                ft.Text("Powered by Llama-3 (Groq)", size=12, color="#E0F2FE", italic=True)
             ], spacing=0)
         ], spacing=15)
     )
